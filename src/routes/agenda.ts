@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 
+import { verifyJwt } from '../middleware/verify-jwt'
 import { prisma } from '../prisma/prisma-client'
 import {
   agendaParamsSchema,
@@ -9,6 +10,8 @@ import {
 } from '../schemas/agenda'
 
 export async function agendaRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', verifyJwt)
+
   app.withTypeProvider<ZodTypeProvider>().post(
     '/agenda',
     {
@@ -20,7 +23,7 @@ export async function agendaRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const userId = await request.getCurrentUserId()
+        const userId = request.user.sub
         const { title, description, date, timeSlots } = request.body
 
         const agenda = await prisma.agenda.create({
@@ -58,7 +61,7 @@ export async function agendaRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const userId = await request.getCurrentUserId()
+        const userId = request.user.sub
         const agenda = await prisma.agenda.findMany({
           where: { userId },
           include: {
@@ -88,7 +91,7 @@ export async function agendaRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const userId = await request.getCurrentUserId()
+        const userId = request.user.sub
         const { id } = request.params
         const { title, description, date, timeSlots } = request.body
 
@@ -142,7 +145,7 @@ export async function agendaRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const userId = await request.getCurrentUserId()
+        const userId = request.user.sub
         const { id } = request.params
 
         await prisma.agenda.delete({

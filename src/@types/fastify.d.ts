@@ -1,7 +1,9 @@
-import 'fastify'
+import '@fastify/jwt'
 
-declare module 'fastify' {
-  export interface FastifyRequest {
-    getCurrentUserId(): Promise<string>
+declare module '@fastify/jwt' {
+  export interface FastifyJWT {
+    user: {
+      sub: string
+    }
   }
 }

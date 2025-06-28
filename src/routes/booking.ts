@@ -1,155 +1,157 @@
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import type { FastifyInstance } from 'fastify'
+import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 
-import { prisma } from "../prisma/prisma-client";
-import { bookingParamsSchema, createBookingSchema } from "../schemas/booking";
+import { verifyJwt } from '../middleware/verify-jwt'
+import { prisma } from '../prisma/prisma-client'
+import { bookingParamsSchema, createBookingSchema } from '../schemas/booking'
 
 export async function bookingRoutes(app: FastifyInstance) {
-	app.withTypeProvider<ZodTypeProvider>().post(
-		"/booking",
-		{
-			schema: {
-				body: createBookingSchema,
-				summary: "Create a new booking",
-				tags: ["Booking"],
-			},
-		},
-		async (request, reply) => {
-			try {
-				const userId = await request.getCurrentUserId();
-				const { agendaId, timeSlotId } = request.body;
+  app.addHook('onRequest', verifyJwt)
 
-				const agenda = await prisma.agenda.findUnique({
-					where: { id: agendaId },
-					include: {
-						timeSlots: true,
-					},
-				});
+  app.withTypeProvider<ZodTypeProvider>().post(
+    '/booking',
+    {
+      schema: {
+        body: createBookingSchema,
+        summary: 'Create a new booking',
+        tags: ['Booking'],
+      },
+    },
+    async (request, reply) => {
+      try {
+        const userId = request.user.sub
+        console.log('🚀 ~ userId:', userId)
+        const { agendaId, timeSlotId } = request.body
 
-				if (!agenda) {
-					return reply.status(404).send({ error: "Agenda not found" });
-				}
+        const agenda = await prisma.agenda.findUnique({
+          where: { id: agendaId },
+          include: {
+            timeSlots: true,
+          },
+        })
 
-				const timeSlot = agenda.timeSlots.find(
-					(slot: { id: string }) => slot.id === timeSlotId,
-				);
-				if (!timeSlot) {
-					return reply.status(404).send({ error: "Time slot not found" });
-				}
+        if (!agenda) {
+          return reply.status(404).send({ error: 'Agenda not found' })
+        }
 
-				if (!timeSlot.isAvailable) {
-					return reply
-						.status(400)
-						.send({ error: "Time slot is not available" });
-				}
+        const timeSlot = agenda.timeSlots.find(
+          (slot: { id: string }) => slot.id === timeSlotId
+        )
+        if (!timeSlot) {
+          return reply.status(404).send({ error: 'Time slot not found' })
+        }
 
-				const booking = await prisma.booking.create({
-					data: {
-						userId,
-						agendaId,
-						timeSlots: {
-							connect: [{ id: timeSlotId }],
-						},
-					},
-					include: {
-						Agenda: {
-							include: {
-								arena: true,
-							},
-						},
-						timeSlots: true,
-					},
-				});
+        if (!timeSlot.isAvailable) {
+          return reply.status(400).send({ error: 'Time slot is not available' })
+        }
 
-				await prisma.timeSlot.update({
-					where: { id: timeSlotId },
-					data: { isAvailable: false },
-				});
+        const booking = await prisma.booking.create({
+          data: {
+            userId,
+            agendaId,
+            timeSlots: {
+              connect: [{ id: timeSlotId }],
+            },
+          },
+          include: {
+            Agenda: {
+              include: {
+                arena: true,
+              },
+            },
+            timeSlots: true,
+          },
+        })
 
-				return booking;
-			} catch (error) {
-				return reply.status(401).send({ error: (error as Error).message });
-			}
-		},
-	);
+        await prisma.timeSlot.update({
+          where: { id: timeSlotId },
+          data: { isAvailable: false },
+        })
 
-	app.withTypeProvider<ZodTypeProvider>().get(
-		"/booking",
-		{
-			schema: {
-				summary: "List all bookings for the current user",
-				tags: ["Booking"],
-			},
-		},
-		async (request, reply) => {
-			try {
-				const userId = await request.getCurrentUserId();
+        return booking
+      } catch (error) {
+        return reply.status(401).send({ error: (error as Error).message })
+      }
+    }
+  )
 
-				const bookings = await prisma.booking.findMany({
-					where: { userId },
-					include: {
-						Agenda: {
-							include: {
-								arena: true,
-							},
-						},
-						timeSlots: true,
-					},
-					orderBy: {
-						createdAt: "desc",
-					},
-				});
+  app.withTypeProvider<ZodTypeProvider>().get(
+    '/booking',
+    {
+      schema: {
+        summary: 'List all bookings for the current user',
+        tags: ['Booking'],
+      },
+    },
+    async (request, reply) => {
+      try {
+        const userId = request.user.sub
 
-				return bookings;
-			} catch (error) {
-				return reply.status(401).send({ error: (error as Error).message });
-			}
-		},
-	);
+        const bookings = await prisma.booking.findMany({
+          where: { userId },
+          include: {
+            Agenda: {
+              include: {
+                arena: true,
+              },
+            },
+            timeSlots: true,
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        })
 
-	app.withTypeProvider<ZodTypeProvider>().delete(
-		"/booking/:id",
-		{
-			schema: {
-				params: bookingParamsSchema,
-				summary: "Delete a booking",
-				tags: ["Booking"],
-			},
-		},
-		async (request, reply) => {
-			try {
-				const userId = await request.getCurrentUserId();
-				const { id } = request.params;
+        return bookings
+      } catch (error) {
+        return reply.status(401).send({ error: (error as Error).message })
+      }
+    }
+  )
 
-				const booking = await prisma.booking.findUnique({
-					where: { id },
-					include: { timeSlots: true },
-				});
+  app.withTypeProvider<ZodTypeProvider>().delete(
+    '/booking/:id',
+    {
+      schema: {
+        params: bookingParamsSchema,
+        summary: 'Delete a booking',
+        tags: ['Booking'],
+      },
+    },
+    async (request, reply) => {
+      try {
+        const userId = request.user.sub
+        const { id } = request.params
 
-				if (!booking) {
-					return reply.status(404).send({ error: "Booking not found" });
-				}
+        const booking = await prisma.booking.findUnique({
+          where: { id },
+          include: { timeSlots: true },
+        })
 
-				await Promise.all(
-					booking.timeSlots.map((slot: { id: string }) =>
-						prisma.timeSlot.update({
-							where: { id: slot.id },
-							data: { isAvailable: true },
-						}),
-					),
-				);
+        if (!booking) {
+          return reply.status(404).send({ error: 'Booking not found' })
+        }
 
-				await prisma.booking.delete({
-					where: {
-						id,
-						userId,
-					},
-				});
+        await Promise.all(
+          booking.timeSlots.map((slot: { id: string }) =>
+            prisma.timeSlot.update({
+              where: { id: slot.id },
+              data: { isAvailable: true },
+            })
+          )
+        )
 
-				return { message: "Booking deleted successfully" };
-			} catch (error) {
-				return reply.status(401).send({ error: (error as Error).message });
-			}
-		},
-	);
+        await prisma.booking.delete({
+          where: {
+            id,
+            userId,
+          },
+        })
+
+        return { message: 'Booking deleted successfully' }
+      } catch (error) {
+        return reply.status(401).send({ error: (error as Error).message })
+      }
+    }
+  )
 }

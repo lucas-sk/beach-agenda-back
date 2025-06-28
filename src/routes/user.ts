@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 
+import { verifyJwt } from '../middleware/verify-jwt'
 import { prisma } from '../prisma/prisma-client'
 import { createUserSchema, loginSchema } from '../schemas/user'
 
@@ -60,7 +61,14 @@ export async function userRoutes(app: FastifyInstance) {
         return reply.status(401).send({ error: 'Invalid credentials' })
       }
 
-      const token = app.jwt.sign({ id: user.id })
+      const token = await reply.jwtSign(
+        {},
+        {
+          sign: {
+            sub: user.id,
+          },
+        }
+      )
 
       return { user, token }
     }
@@ -73,10 +81,11 @@ export async function userRoutes(app: FastifyInstance) {
         summary: 'Get user profile',
         tags: ['Users'],
       },
+      onRequest: verifyJwt,
     },
     async (request, reply) => {
       try {
-        const userId = await request.getCurrentUserId()
+        const userId = request.user.sub
 
         const user = await prisma.user.findUnique({
           where: { id: userId },
